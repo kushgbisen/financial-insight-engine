@@ -1,0 +1,17 @@
+streamlit
+pandas
+pyarrow
+faiss-cpu
+google-generativeai
+numpy
+python-dotenv
+configparser
+matplotlib
+seaborn
+mplfinance
+scikit-learn
+joblib
+yfinance
+faiss-cpu
+google-generativeai
+pyarrow
