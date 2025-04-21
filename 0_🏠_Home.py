@@ -1,31 +1,17 @@
 import streamlit as st
 import os
 
-# Optional: Set page-specific title, though the main config in app.py might suffice
 st.set_page_config(page_title="Home - Financial Insight Engine", page_icon="🏠")
 
-# Function to check if RAG is properly set up
-# Add this function to check RAG status
 def is_rag_ready():
-    # Check for embeddings directory with content
     embeddings_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "embeddings")
     if not os.path.isdir(embeddings_dir):
         return False
     
-    # Check if there are any FAISS index files in the embeddings directory
     faiss_files = [f for f in os.listdir(embeddings_dir) if f.endswith("_faiss.index")]
     return len(faiss_files) > 0
 
-# Then update the RAG description in your markdown from:
-# *   **📰 News RAG:** Search and get AI-powered explanations based on recent financial news articles *(Feature Under Development)*.
-
-# To:
-# *   **📰 News RAG:** Search and get AI-powered explanations based on recent financial news articles.
-
-# And optionally add this status section:
 st.subheader("🔍 System Status")
-
-# Check RAG status and display appropriate message
 rag_status = is_rag_ready()
 col1, col2 = st.columns(2)
 

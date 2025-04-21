@@ -10,14 +10,11 @@ from datetime import date, timedelta
 import plotly.graph_objects as go
 import traceback # For detailed error printing
 
-# --- Constants ---
-# Assuming 'models' folder is relative to the main app.py directory
+# Model/scaler paths relative to the main app directory
 MODEL_DIR = 'models'
 MODEL_PATH = os.path.join(MODEL_DIR, 'nifty_high_lr_model.joblib')
 SCALER_PATH = os.path.join(MODEL_DIR, 'ohlc_scaler.joblib')
 NIFTY_TICKER = "^NSEI"
-
-# --- Helper Functions (Specific to this page) ---
 
 @st.cache_resource # Cache resource loading for the session
 def load_artifacts(model_path, scaler_path):
@@ -39,17 +36,17 @@ def get_latest_nifty_data(ticker):
     """Fetches the most recent trading day's data for the ticker."""
     try:
         today = date.today()
-        start_date = today - timedelta(days=7) # Look back 7 days
+        start_date = today - timedelta(days=7) # Look back 7 days to ensure we get the last trading day
         stock_data = yf.download(ticker, start=start_date, end=today, auto_adjust=False, progress=False)
         if stock_data.empty:
             print(f"Could not fetch recent data for {ticker}.")
             return None
         latest_data = stock_data.iloc[-1:].copy()
-        # Robust column renaming
+        # Handle potential MultiIndex and ensure lowercase column names
         if isinstance(latest_data.columns, pd.MultiIndex):
             latest_data.columns = latest_data.columns.get_level_values(0)
         latest_data.columns = [str(col).lower() for col in latest_data.columns]
-        latest_data = latest_data.loc[:,~latest_data.columns.duplicated()]
+        latest_data = latest_data.loc[:,~latest_data.columns.duplicated()] # Remove duplicate columns if any
         print(f"Fetched latest data for date: {latest_data.index[0].date()}")
         return latest_data
     except Exception as e:
@@ -65,11 +62,11 @@ def get_historical_data(ticker, period="1y"):
         if stock_data.empty:
             st.warning(f"Could not fetch historical data for {ticker} and period {period}.")
             return None
-        # Robust column renaming
+        # Handle potential MultiIndex and ensure lowercase column names
         if isinstance(stock_data.columns, pd.MultiIndex):
             stock_data.columns = stock_data.columns.get_level_values(0)
         stock_data.columns = [str(col).lower() for col in stock_data.columns]
-        stock_data = stock_data.loc[:,~stock_data.columns.duplicated()]
+        stock_data = stock_data.loc[:,~stock_data.columns.duplicated()] # Remove duplicate columns if any
         required_cols = ['open', 'high', 'low', 'close']
         if not all(col in stock_data.columns for col in required_cols):
              st.error("Downloaded historical data is missing required OHLC columns.")
@@ -95,16 +92,12 @@ def create_ohlc_chart(df, ticker_name="NIFTY 50"):
         st.error(f"Error creating chart: {e}")
         return None
 
-# --- Page Title ---
 st.header("📈 Nifty 50 Next Day High Prediction")
 
-# --- Load Model and Scaler ---
 lr_model, scaler = load_artifacts(MODEL_PATH, SCALER_PATH)
 
-# --- Main Content ---
 if lr_model and scaler:
 
-    # --- Chart Section ---
     st.subheader("Historical Chart & Trend")
     timeframe_options = { "1 Month": "1mo", "3 Months": "3mo", "6 Months": "6mo",
                           "1 Year": "1y", "2 Years": "2y", "5 Years": "5y", "Max": "max" }
@@ -113,12 +106,12 @@ if lr_model and scaler:
     selected_period = timeframe_options[selected_timeframe_label]
     hist_data = get_historical_data(NIFTY_TICKER, period=selected_period)
 
-    # Calculate and Display Trend Metric
+    # Calculate and Display Trend Metric (Close vs 5-day SMA)
     if hist_data is not None and not hist_data.empty:
         hist_data['sma_5'] = hist_data['close'].rolling(window=5).mean()
         latest_close = hist_data['close'].iloc[-1]
         latest_sma_5 = hist_data['sma_5'].iloc[-1]
-        if pd.notna(latest_close) and pd.notna(latest_sma_5): # Check if values are valid
+        if pd.notna(latest_close) and pd.notna(latest_sma_5): # Check for valid numbers
              delta_sma_5 = latest_close - latest_sma_5
              st.metric(label="Latest Close vs 5-Day SMA", value=f"{latest_close:.2f}",
                        delta=f"{delta_sma_5:.2f} ({'Above' if delta_sma_5 >= 0 else 'Below'} SMA)")
@@ -129,14 +122,12 @@ if lr_model and scaler:
         fig = create_ohlc_chart(hist_data, ticker_name="Nifty 50")
         if fig:
             st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("Could not display historical chart.") # Error handled in create_ohlc_chart
-    else:
-        st.warning("Could not fetch historical data for chart/trend.") # Error handled in get_historical_data
+        # Error creating chart is handled within create_ohlc_chart
 
-    st.markdown("---") # Separator
+    # Error fetching data is handled within get_historical_data
 
-    # --- Prediction Section ---
+    st.markdown("---")
+
     st.subheader("Predict Next Day's High")
     st.markdown("Click the button below to fetch the latest Nifty 50 data and predict the *next trading day's High*.")
     fetch_predict_button = st.button("Fetch Latest Data & Predict High", type="primary")
@@ -153,21 +144,21 @@ if lr_model and scaler:
                 latest_date = latest_ohlc.index[0].strftime('%Y-%m-%d')
                 st.caption(f"Data fetched for: {latest_date}")
                 input_data = latest_ohlc[['open', 'high', 'low', 'close']]
-                # Scale and Predict
+                # Scale input and make prediction
                 try:
                     input_scaled = scaler.transform(input_data)
                     prediction = lr_model.predict(input_scaled)
                     predicted_high = prediction[0]
                     st.success(f"Predicted High for the next trading day: **{predicted_high:.2f}**")
-                    st.caption(f"Prediction based on data from {latest_date}. Model R² on test data: ~0.998") # Add context
+                    st.caption(f"Prediction based on data from {latest_date}. Model R² on test data: ~0.998") # Provide model context
                 except Exception as e:
                     st.error(f"Error during scaling or prediction: {e}")
-                    traceback.print_exc() # Show detailed error in logs/terminal
+                    traceback.print_exc() # Show detailed error in logs/terminal for debugging
             else:
                 st.error("Latest fetched data is missing required columns for prediction (open, high, low, close).")
         else:
             st.error("Failed to fetch latest data for prediction. Please try again later.")
 
 else:
-    # Error message if model/scaler failed to load
+    # Display error if model/scaler loading failed earlier
     st.error("Prediction functionality is unavailable because model artifacts could not be loaded.")

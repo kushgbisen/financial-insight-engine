@@ -10,7 +10,7 @@ import configparser
 import warnings
 from dotenv import load_dotenv
 
-# Load environment variables (for API keys)
+# Load .env file for API keys
 load_dotenv()
 
 # Set page config (must be the first Streamlit command)
@@ -25,8 +25,7 @@ if os.path.exists(config_path):
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
-# ===================== CONFIG PARAMETERS =====================
-# Default values
+# --- Config Parameters ---
 CURRENT_DATE = "2025-04-19"
 CURRENT_USER = "kushgbisen"
 project_root = os.path.dirname(os.path.dirname(__file__))
@@ -43,23 +42,23 @@ if os.path.exists(config_path):
         if config.has_section('APP'):
             CURRENT_DATE = config.get('APP', 'current_date', fallback=CURRENT_DATE)
             CURRENT_USER = config.get('APP', 'current_user', fallback=CURRENT_USER)
-        
+
         if config.has_section('DATA'):
             EMBEDDING_DIR = os.path.join(project_root, config.get('DATA', 'embeddings_dir', fallback="embeddings"))
             TOP_K_RESULTS = int(config.get('DATA', 'top_k_results', fallback=TOP_K_RESULTS))
-        
+
         if config.has_section('GEMINI'):
             GEMINI_MODEL_NAME = config.get('GEMINI', 'model_name', fallback=GEMINI_MODEL_NAME)
-        
+
         if config.has_section('COLUMNS'):
             COL_TITLE = config.get('COLUMNS', 'title', fallback=COL_TITLE)
             COL_DATE = config.get('COLUMNS', 'date', fallback=COL_DATE)
             COL_DESCRIPTION = config.get('COLUMNS', 'description', fallback=COL_DESCRIPTION)
     except:
-        # If any errors in parsing config, use defaults
+        # Fallback to defaults if config parsing fails
         pass
 
-# ===================== DATA LOADING FUNCTIONS =====================
+# --- Data Loading Functions ---
 def get_available_tickers(data_dir):
     """Gets a list of stock tickers based on the FAISS index files."""
     if not os.path.isdir(data_dir):
@@ -106,7 +105,7 @@ def load_cleaned_data(ticker, data_dir):
     else:
         return None
 
-# ===================== SEARCH FUNCTIONS =====================
+# --- Search Functions ---
 def search_random(tickers_to_search, data_dir, top_n=TOP_K_RESULTS):
     """
     For demonstration when full search is not possible - returns random articles.
@@ -124,14 +123,12 @@ def search_random(tickers_to_search, data_dir, top_n=TOP_K_RESULTS):
         st.warning("No tickers available to search.")
         return pd.DataFrame()
 
-    # Get some random articles from each ticker
     for ticker in search_list:
         df_clean = load_cleaned_data(ticker, data_dir)
 
         if df_clean is None or len(df_clean) == 0:
             continue
 
-        # Get random samples
         n_samples = min(3, len(df_clean))
         try:
             samples = df_clean.sample(n_samples)
@@ -139,7 +136,7 @@ def search_random(tickers_to_search, data_dir, top_n=TOP_K_RESULTS):
             for _, row in samples.iterrows():
                 result = {
                     "ticker": ticker,
-                    "similarity": np.random.rand(),  # Random similarity score
+                    "similarity": np.random.rand(),  # Random similarity score for demo
                     COL_TITLE: row.get(COL_TITLE, "No title"),
                     COL_DATE: row.get(COL_DATE, "No date"),
                     COL_DESCRIPTION: row.get(COL_DESCRIPTION, "No description")
@@ -155,7 +152,7 @@ def search_random(tickers_to_search, data_dir, top_n=TOP_K_RESULTS):
     results_df = results_df.sort_values(by="similarity", ascending=True)
     return results_df.head(top_n)
 
-# ===================== GEMINI FUNCTIONS =====================
+# --- Gemini Functions ---
 def summarize_with_gemini(query, articles_data, api_key, model_name=GEMINI_MODEL_NAME):
     """Generates a summary using Google Gemini API."""
     if not api_key:
@@ -164,10 +161,8 @@ def summarize_with_gemini(query, articles_data, api_key, model_name=GEMINI_MODEL
         return "No articles found to summarize."
 
     try:
-        # Configure Gemini
         genai.configure(api_key=api_key)
 
-        # Create context from article data
         context = ""
         for i, article in articles_data.iterrows():
             ticker = article.get("ticker", "N/A")
@@ -179,7 +174,6 @@ def summarize_with_gemini(query, articles_data, api_key, model_name=GEMINI_MODEL
 
             context += f"Article {i+1}: {ticker} - {title} ({pub_date})\n{text}\n\n"
 
-        # Create prompt for Gemini
         prompt = f"""
         You are a concise financial analyst. The current date is {CURRENT_DATE}.
 
@@ -198,24 +192,22 @@ def summarize_with_gemini(query, articles_data, api_key, model_name=GEMINI_MODEL
         {context}
         """
 
-        # Configure generation parameters
         temperature = 0.1
         max_tokens = 350
-        
-        # Try to get values from config
+
+        # Try to get generation values from config
         if os.path.exists(config_path) and config.has_section('GEMINI'):
             try:
                 temperature = float(config.get('GEMINI', 'temperature', fallback=temperature))
                 max_tokens = int(config.get('GEMINI', 'max_output_tokens', fallback=max_tokens))
             except:
-                pass
+                pass # Use defaults if config values are invalid
 
         generation_config = genai.GenerationConfig(
             temperature=temperature,
             max_output_tokens=max_tokens,
         )
 
-        # Generate content
         model = genai.GenerativeModel(model_name)
         response = model.generate_content(prompt, generation_config=generation_config)
 
@@ -228,37 +220,35 @@ def summarize_with_gemini(query, articles_data, api_key, model_name=GEMINI_MODEL
         else:
             return f"Error generating summary: {str(e)}"
 
-# ===================== UI FUNCTIONS =====================
+# --- UI Functions ---
 def render_sidebar():
     """Render the sidebar elements"""
     st.sidebar.header("📰 News RAG Settings")
-    
+
     # Get API key from environment or let user input it
     default_api_key = os.getenv("GEMINI_API_KEY", "")
     gemini_api_key = st.sidebar.text_input(
-        "Gemini API Key:", 
+        "Gemini API Key:",
         value=default_api_key,
         type="password"
     )
-    
+
     if not gemini_api_key:
         st.sidebar.warning("API Key required for summarization.")
-    
-    # Get available tickers
+
     available_tickers = get_available_tickers(EMBEDDING_DIR)
     ticker_options = ["ALL"] + available_tickers
-    
-    # Ticker selection
+
     selected_tickers = st.sidebar.multiselect(
         "Select Ticker(s):", options=ticker_options, default=["ALL"]
     )
-    
+
     return gemini_api_key, selected_tickers
 
 def render_search_results(search_results, search_time):
     """Render the search results section"""
     st.subheader("📰 Top Articles")
-    
+
     if not search_results.empty:
         st.info(f"Found {len(search_results)} articles in {search_time:.2f}s")
 
@@ -276,7 +266,6 @@ def render_explanation(query, search_results, gemini_api_key):
     """Render the AI explanation section"""
     st.subheader("✨ AI-Generated Explanation")
 
-    # Generate summary if we have results and API key
     if not search_results.empty and gemini_api_key:
         with st.spinner("Generating explanation..."):
             start_time = time.time()
@@ -287,7 +276,6 @@ def render_explanation(query, search_results, gemini_api_key):
             )
             summary_time = time.time() - start_time
 
-        # Display the summary
         if explanation.startswith("Error:"):
             st.error(explanation)
         else:
@@ -297,23 +285,20 @@ def render_explanation(query, search_results, gemini_api_key):
     elif not gemini_api_key and not search_results.empty:
         st.warning("Please enter a Gemini API Key to generate explanations.")
 
-# ===================== MAIN APP =====================
+# --- Main App ---
 st.title("📰 Financial News RAG")
 st.markdown("""
 This tool lets you search financial news articles and get AI-generated explanations to help understand market trends and insights.
 Enter your query about financial markets, select relevant tickers, and get concise explanations based on news articles.
 """)
 
-# Render sidebar and get user inputs
 gemini_api_key, selected_tickers = render_sidebar()
 
-# Main query input
 query = st.text_area(
     "Enter your query:", height=100,
     placeholder="e.g., What are the recent trends in semiconductor industry in Asia?"
 )
 
-# Search button
 search_button = st.button("🔍 Search & Explain")
 
 # System status info
@@ -331,7 +316,6 @@ else:
 
 st.markdown("---")
 
-# Process search when button is clicked
 if search_button:
     if not query:
         st.error("Please enter a query.")
@@ -340,11 +324,10 @@ if search_button:
     else:
         st.success("Processing your query...")
 
-        # Split screen into two columns
         col1, col2 = st.columns([2, 3])
 
         with col1:
-            # Search for articles (using random selection for demo)
+            # Retrieve articles (using random fallback for demo)
             with st.spinner("Retrieving articles..."):
                 start_time = time.time()
                 search_results = search_random(
@@ -353,14 +336,11 @@ if search_button:
                     top_n=TOP_K_RESULTS
                 )
                 search_time = time.time() - start_time
-            
-            # Display search results
+
             render_search_results(search_results, search_time)
 
         with col2:
-            # Generate and display explanation
             render_explanation(query, search_results, gemini_api_key)
 
-# Footer
 st.markdown("---")
 st.caption("CSEG1021 Project by KUSHAGRA SINGH BISEN")
