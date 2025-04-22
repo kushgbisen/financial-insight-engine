@@ -8,7 +8,7 @@
 
 **📽️ Demo Video:**  
 
-[![Watch the demo](https://img.youtube.com/vi/SqWsuBnbr6w/0.jpg)](https://www.youtube.com/watch?v=SqWsuBnbr6w)
+[![Watch the demo](https://img.youtube.com/vi/qY4uIKdchUY/0.jpg)](https://www.youtube.com/watch?v=qY4uIKdchUY)
 
 ## Project Goal
 
